@@ -28,6 +28,7 @@ type BotBlocker struct {
 	next        http.Handler
 	name        string
 	ipBlocklist []netip.Addr
+	lastUpdated time.Time
 	Config
 	logger *slog.Logger
 }
@@ -56,6 +57,7 @@ func (b *BotBlocker) Update() error {
 	}
 
 	b.ipBlocklist = ipBlockList
+	b.lastUpdated = time.Now()
 
 	duration := time.Now().Sub(startTime)
 	b.logger.Info("Updated block lists", "blocked ips", len(b.ipBlocklist), "duration", duration)
@@ -89,6 +91,12 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 }
 
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	if time.Now().Sub(b.lastUpdated) > time.Duration(time.Hour) {
+		err := b.Update()
+		if err != nil {
+			b.logger.Error(fmt.Sprintf("failed to update blocklist: %v", err))
+		}
+	}
 	startTime := time.Now()
 	b.logger.Debug("Checking request", "IP", req.RemoteAddr)
 
