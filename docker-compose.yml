@@ -22,7 +22,9 @@ services:
       - "traefik.http.routers.whoami.rule=Host(`whoami.example.com`)"
       - "traefik.http.routers.whoami.entrypoints=web"
       - "traefik.http.routers.whoami.middlewares=botblocker@docker"
-      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=http://lists/ip-blocklist"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[1]=http://lists/ip-blocklist"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.loglevel=INFO"
     networks:
       test:
   allowed:
@@ -49,7 +51,7 @@ services:
     - -c 
     - |
       while true; do
-        curl whoami.example.com 2>/dev/null | grep X-Real-Ip
+        curl whoami.example.com 2>/dev/null 
         sleep 5
       done
     networks:
