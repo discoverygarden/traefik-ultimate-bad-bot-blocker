@@ -1,0 +1,71 @@
+name: traefik-bad-bot-blocker
+services:
+  traefik:
+    image: traefik:3.0
+    command:      
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entryPoints.web.address=:80"
+      - "--accesslog=true"
+      - "--experimental.localPlugins.botblocker.moduleName=github.com/discoverygarden/traefik-ultimate-bad-bot-blocker"
+    ports:
+      - "8080:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./:/plugins-local/src/github.com/discoverygarden/traefik-ultimate-bad-bot-blocker"
+    networks:
+      test:
+  whoami:
+    image: traefik/whoami
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.example.com`)"
+      - "traefik.http.routers.whoami.entrypoints=web"
+      - "traefik.http.routers.whoami.middlewares=botblocker@docker"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=http://lists/ip-blocklist"
+    networks:
+      test:
+  allowed:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint: 
+    - /bin/sh
+    - -c 
+    - |
+      while true; do
+        curl whoami.example.com 2>/dev/null | grep X-Real-Ip
+        sleep 5
+      done
+    networks:
+      test:
+        ipv4_address: 10.10.10.1
+  blocked:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint: 
+    - /bin/sh
+    - -c 
+    - |
+      while true; do
+        curl whoami.example.com 2>/dev/null | grep X-Real-Ip
+        sleep 5
+      done
+    networks:
+      test:
+        ipv4_address: 10.10.10.2
+  lists:
+    image: nginx
+    volumes:
+      - ./fixtures/lists/:/usr/share/nginx/html
+    networks:
+      test:
+
+networks:
+  test:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16
+          gateway: 10.10.0.1
