@@ -1,11 +1,12 @@
 displayName: Trafik Ultimate Bad Bot Blocker
 type: middleware
-iconPath: .assets/icon.png
 
 import: github.com/discoverygarden/traefik-ultimate-bad-bot-blocker
 
-summary: '[Demo] Add Request Header'
+summary: 'IP and user agent blocker'
 
 testData:
   ipblocklisturls:
-    lists/ip-blocklist
+    - https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list
+  useragentblocklisturls:
+    - https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list
