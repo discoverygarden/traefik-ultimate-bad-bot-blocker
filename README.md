@@ -16,8 +16,10 @@ spec:
     botblocker:
       ipblocklisturls:
         - http://badips.example.com/ip-blocklist"
+      useragentblocklisturls:
+        - http://badips.example.com/useragent-blocklist"
 ```
 
 ## Blocklist
 
-The blocklists should be acccessible via http/s and be a plain text list of IP address.
+The blocklists should be acccessible via http/s and be a plain text list of IP address or useragents.

@@ -25,6 +25,8 @@ services:
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[1]=http://lists/ip-blocklist"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.loglevel=INFO"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[1]=http://lists/useragent-blocklist"
     networks:
       test:
   allowed:
@@ -42,7 +44,7 @@ services:
     networks:
       test:
         ipv4_address: 10.10.10.1
-  blocked:
+  blocked-ip:
     image: quay.io/curl/curl
     external_links:
       - traefik:whoami.example.com
@@ -57,6 +59,21 @@ services:
     networks:
       test:
         ipv4_address: 10.10.10.2
+  blocked-agent:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint: 
+    - /bin/sh
+    - -c 
+    - |
+      while true; do
+        curl -A 'Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US' whoami.example.com 2>/dev/null 
+        sleep 5
+      done
+    networks:
+      test:
+        ipv4_address: 10.10.10.3
   lists:
     image: nginx
     volumes:

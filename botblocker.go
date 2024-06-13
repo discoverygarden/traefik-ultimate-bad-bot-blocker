@@ -9,12 +9,14 @@ import (
 	"net/netip"
 	"os"
 	"slices"
+	"strings"
 	"time"
 )
 
 type Config struct {
-	IpBlocklistUrls []string `json:"ipblocklisturls,omitempty"`
-	LogLevel        string   `json:"loglevel,omitempty"`
+	IpBlocklistUrls        []string `json:"ipblocklisturls,omitempty"`
+	UserAgentBlocklistUrls []string `json:"useragentblocklisturls,omitempty"`
+	LogLevel               string   `json:"loglevel,omitempty"`
 }
 
 func CreateConfig() *Config {
@@ -25,23 +27,43 @@ func CreateConfig() *Config {
 }
 
 type BotBlocker struct {
-	next        http.Handler
-	name        string
-	ipBlocklist []netip.Addr
-	lastUpdated time.Time
+	next               http.Handler
+	name               string
+	ipBlocklist        []netip.Addr
+	userAgentBlockList []string
+	lastUpdated        time.Time
 	Config
 	logger *slog.Logger
 }
 
 func (b *BotBlocker) Update() error {
+	startTime := time.Now()
+	err := b.UpdateIps()
+	if err != nil {
+		return fmt.Errorf("failed to update IP blocklists: %w", err)
+	}
+	err = b.UpdateUserAgents()
+	if err != nil {
+		return fmt.Errorf("failed to update IP blocklists: %w", err)
+	}
+
+	b.lastUpdated = time.Now()
+	duration := time.Now().Sub(startTime)
+	b.logger.Info("Updated block lists", "blocked ips", len(b.ipBlocklist), "duration", duration)
+	return nil
+}
+
+func (b *BotBlocker) UpdateIps() error {
 	ipBlockList := make([]netip.Addr, 0)
 
-	b.logger.Info("Updating blocklists")
-	startTime := time.Now()
+	b.logger.Info("Updating IP blocklist")
 	for _, url := range b.IpBlocklistUrls {
 		resp, err := http.Get(url)
 		if err != nil {
 			return fmt.Errorf("failed fetch IP list: %w", err)
+		}
+		if resp.StatusCode > 299 {
+			return fmt.Errorf("failed fetch IP list: received a %v from %v", resp.Status, url)
 		}
 
 		defer resp.Body.Close()
@@ -57,10 +79,33 @@ func (b *BotBlocker) Update() error {
 	}
 
 	b.ipBlocklist = ipBlockList
-	b.lastUpdated = time.Now()
 
-	duration := time.Now().Sub(startTime)
-	b.logger.Info("Updated block lists", "blocked ips", len(b.ipBlocklist), "duration", duration)
+	return nil
+}
+
+func (b *BotBlocker) UpdateUserAgents() error {
+	userAgentBlockList := make([]string, 0)
+
+	b.logger.Info("Updating user agent blocklist")
+	for _, url := range b.UserAgentBlocklistUrls {
+		resp, err := http.Get(url)
+		if err != nil {
+			return fmt.Errorf("failed fetch useragent list: %w", err)
+		}
+		if resp.StatusCode > 299 {
+			return fmt.Errorf("failed fetch useragent list: received a %v from %v", resp.Status, url)
+		}
+
+		defer resp.Body.Close()
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			agent := strings.ToLower(strings.TrimSpace(scanner.Text()))
+			userAgentBlockList = append(userAgentBlockList, agent)
+		}
+	}
+
+	b.userAgentBlockList = userAgentBlockList
+
 	return nil
 }
 
@@ -98,7 +143,7 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 	startTime := time.Now()
-	b.logger.Debug("Checking request", "IP", req.RemoteAddr)
+	b.logger.Debug("Checking request", "IP", req.RemoteAddr, "user agent", req.UserAgent())
 
 	remoteAddrPort, err := netip.ParseAddrPort(req.RemoteAddr)
 	if err != nil {
@@ -107,9 +152,20 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	if slices.Contains(b.ipBlocklist, remoteAddrPort.Addr()) {
+		b.logger.Info(fmt.Sprintf("blocked request with from IP %v", remoteAddrPort.Addr()))
 		b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
+	}
+
+	agent := strings.ToLower(req.UserAgent())
+	for _, badAgent := range b.userAgentBlockList {
+		if strings.Contains(agent, badAgent) {
+			b.logger.Info(fmt.Sprintf("blocked request with user agent %v because it contained %v", agent, badAgent))
+			b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
+			http.Error(rw, "blocked", http.StatusForbidden)
+			return
+		}
 	}
 
 	b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
