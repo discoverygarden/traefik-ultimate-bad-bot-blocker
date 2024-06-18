@@ -6,7 +6,5 @@ import: github.com/discoverygarden/traefik-ultimate-bad-bot-blocker
 summary: 'IP and user agent blocker'
 
 testData:
-  ipblocklisturls:
-    - https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list
-  useragentblocklisturls:
-    - https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list
+  ipblocklisturls: []
+  useragentblocklisturls: []
