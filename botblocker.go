@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log/slog"
+	// "log/slog"
 	"net/http"
 	"net/netip"
-	"os"
+	// "os"
 	"slices"
 	"strings"
 	"time"
@@ -33,11 +33,11 @@ type BotBlocker struct {
 	userAgentBlockList []string
 	lastUpdated        time.Time
 	Config
-	logger *slog.Logger
+	// logger *slog.Logger
 }
 
 func (b *BotBlocker) Update() error {
-	startTime := time.Now()
+	// startTime := time.Now()
 	err := b.UpdateIps()
 	if err != nil {
 		return fmt.Errorf("failed to update IP blocklists: %w", err)
@@ -48,15 +48,15 @@ func (b *BotBlocker) Update() error {
 	}
 
 	b.lastUpdated = time.Now()
-	duration := time.Now().Sub(startTime)
-	b.logger.Info("Updated block lists", "blocked ips", len(b.ipBlocklist), "duration", duration)
+	// duration := time.Now().Sub(startTime)
+	// b.logger.Info("Updated block lists", "blocked ips", len(b.ipBlocklist), "duration", duration)
 	return nil
 }
 
 func (b *BotBlocker) UpdateIps() error {
 	ipBlockList := make([]netip.Addr, 0)
 
-	b.logger.Info("Updating IP blocklist")
+	// b.logger.Info("Updating IP blocklist")
 	for _, url := range b.IpBlocklistUrls {
 		resp, err := http.Get(url)
 		if err != nil {
@@ -86,7 +86,7 @@ func (b *BotBlocker) UpdateIps() error {
 func (b *BotBlocker) UpdateUserAgents() error {
 	userAgentBlockList := make([]string, 0)
 
-	b.logger.Info("Updating user agent blocklist")
+	// b.logger.Info("Updating user agent blocklist")
 	for _, url := range b.UserAgentBlocklistUrls {
 		resp, err := http.Get(url)
 		if err != nil {
@@ -110,25 +110,25 @@ func (b *BotBlocker) UpdateUserAgents() error {
 }
 
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	logLevel := slog.Level(0)
-	err := logLevel.UnmarshalText([]byte(config.LogLevel))
-	if err != nil {
-		return nil, fmt.Errorf("failed to set log level: %w", err)
-	}
-	logger := slog.New(
-		slog.NewTextHandler(
-			os.Stdout,
-			&slog.HandlerOptions{Level: logLevel},
-		),
-	)
+	// logLevel := slog.Level(0)
+	// err := logLevel.UnmarshalText([]byte(config.LogLevel))
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to set log level: %w", err)
+	// }
+	// logger := slog.New(
+	// slog.NewTextHandler(
+	// 	os.Stdout,
+	// 	&slog.HandlerOptions{Level: logLevel},
+	// ),
+	// )
 
 	blocker := BotBlocker{
 		name:   name,
 		next:   next,
 		Config: *config,
-		logger: logger,
+		// logger: logger,
 	}
-	err = blocker.Update()
+	err := blocker.Update()
 	if err != nil {
 		return nil, fmt.Errorf("failed to update blocklists: %s", err)
 	}
@@ -139,11 +139,11 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if time.Now().Sub(b.lastUpdated) > time.Duration(time.Hour) {
 		err := b.Update()
 		if err != nil {
-			b.logger.Error(fmt.Sprintf("failed to update blocklist: %v", err))
+			// b.logger.Error(fmt.Sprintf("failed to update blocklist: %v", err))
 		}
 	}
-	startTime := time.Now()
-	b.logger.Debug("Checking request", "IP", req.RemoteAddr, "user agent", req.UserAgent())
+	// startTime := time.Now()
+	// b.logger.Debug("Checking request", "IP", req.RemoteAddr, "user agent", req.UserAgent())
 
 	remoteAddrPort, err := netip.ParseAddrPort(req.RemoteAddr)
 	if err != nil {
@@ -152,8 +152,8 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	if slices.Contains(b.ipBlocklist, remoteAddrPort.Addr()) {
-		b.logger.Info(fmt.Sprintf("blocked request with from IP %v", remoteAddrPort.Addr()))
-		b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
+		// b.logger.Info(fmt.Sprintf("blocked request with from IP %v", remoteAddrPort.Addr()))
+		// b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
@@ -161,13 +161,13 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	agent := strings.ToLower(req.UserAgent())
 	for _, badAgent := range b.userAgentBlockList {
 		if strings.Contains(agent, badAgent) {
-			b.logger.Info(fmt.Sprintf("blocked request with user agent %v because it contained %v", agent, badAgent))
-			b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
+			// b.logger.Info(fmt.Sprintf("blocked request with user agent %v because it contained %v", agent, badAgent))
+			// b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
 			http.Error(rw, "blocked", http.StatusForbidden)
 			return
 		}
 	}
 
-	b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
+	// b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
 	b.next.ServeHTTP(rw, req)
 }
