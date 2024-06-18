@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/netip"
 	// "os"
-	"slices"
 	"strings"
 	"time"
 )
@@ -150,12 +149,15 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "internal error", http.StatusInternalServerError)
 		return
 	}
+	remoteAddr := remoteAddrPort.Addr()
 
-	if slices.Contains(b.ipBlocklist, remoteAddrPort.Addr()) {
-		// b.logger.Info(fmt.Sprintf("blocked request with from IP %v", remoteAddrPort.Addr()))
-		// b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
-		http.Error(rw, "blocked", http.StatusForbidden)
-		return
+	for _, badIP := range b.ipBlocklist {
+		if remoteAddr == badIP {
+			// b.logger.Info(fmt.Sprintf("blocked request with from IP %v", remoteAddrPort.Addr()))
+			// b.logger.Debug(fmt.Sprintf("Checked request in %v", time.Now().Sub(startTime)))
+			http.Error(rw, "blocked", http.StatusForbidden)
+			return
+		}
 	}
 
 	agent := strings.ToLower(req.UserAgent())
