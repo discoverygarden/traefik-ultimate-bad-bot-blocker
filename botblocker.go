@@ -22,8 +22,9 @@ type Config struct {
 
 func CreateConfig() *Config {
 	return &Config{
-		IpBlocklistUrls: []string{},
-		LogLevel:        "INFO",
+		IpBlocklistUrls:        []string{},
+		UserAgentBlocklistUrls: []string{},
+		LogLevel:               "INFO",
 	}
 }
 
