@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 
 	"net/http"
 	"net/netip"
@@ -67,21 +68,45 @@ func (b *BotBlocker) updateIps() error {
 			return fmt.Errorf("failed fetch IP list: received a %v from %v", resp.Status, url)
 		}
 
-		defer resp.Body.Close()
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			addrStr := scanner.Text()
-			addr, err := netip.ParseAddr(addrStr)
-			if err != nil {
-				return fmt.Errorf("failed to parse IP address: %w", err)
-			}
-			ipBlockList = append(ipBlockList, addr)
+		ips, err := readIps(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to update IPs: %e", err)
 		}
+		ipBlockList = append(ipBlockList, ips...)
 	}
 
 	b.ipBlocklist = ipBlockList
 
 	return nil
+}
+
+func readIps(ipReader io.ReadCloser) ([]netip.Addr, error) {
+	ips := make([]netip.Addr, 0)
+	defer ipReader.Close()
+	scanner := bufio.NewScanner(ipReader)
+	for scanner.Scan() {
+		addrStr := strings.TrimSpace(scanner.Text())
+		addr, err := netip.ParseAddr(addrStr)
+		if err != nil {
+			return []netip.Addr{}, err
+		}
+		ips = append(ips, addr)
+	}
+
+	return ips, nil
+}
+
+func readUserAgents(userAgentReader io.ReadCloser) ([]string, error) {
+	userAgents := make([]string, 0)
+
+	defer userAgentReader.Close()
+	scanner := bufio.NewScanner(userAgentReader)
+	for scanner.Scan() {
+		agent := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		userAgents = append(userAgents, agent)
+	}
+
+	return userAgents, nil
 }
 
 func (b *BotBlocker) updateUserAgents() error {
@@ -97,12 +122,11 @@ func (b *BotBlocker) updateUserAgents() error {
 			return fmt.Errorf("failed fetch useragent list: received a %v from %v", resp.Status, url)
 		}
 
-		defer resp.Body.Close()
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			agent := strings.ToLower(strings.TrimSpace(scanner.Text()))
-			userAgentBlockList = append(userAgentBlockList, agent)
+		agents, err := readUserAgents(resp.Body)
+		if err != nil {
+			return err
 		}
+		userAgentBlockList = append(userAgentBlockList, agents...)
 	}
 
 	b.userAgentBlockList = userAgentBlockList
@@ -144,27 +168,40 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "internal error", http.StatusInternalServerError)
 		return
 	}
-	remoteAddr := remoteAddrPort.Addr()
-
-	for _, badIP := range b.ipBlocklist {
-		if remoteAddr == badIP {
-			log.Infof("blocked request with from IP %v", remoteAddrPort.Addr())
-			log.Debugf("Checked request in %v", time.Now().Sub(startTime))
-			http.Error(rw, "blocked", http.StatusForbidden)
-			return
-		}
+	if b.shouldBlockIp(remoteAddrPort.Addr()) {
+		log.Infof("blocked request with from IP %v", remoteAddrPort.Addr())
+		log.Debugf("Checked request in %v", time.Now().Sub(startTime))
+		http.Error(rw, "blocked", http.StatusForbidden)
+		return
 	}
 
 	agent := strings.ToLower(req.UserAgent())
-	for _, badAgent := range b.userAgentBlockList {
-		if strings.Contains(agent, badAgent) {
-			log.Infof("blocked request with user agent %v because it contained %v", agent, badAgent)
-			log.Debugf("Checked request in %v", time.Now().Sub(startTime))
-			http.Error(rw, "blocked", http.StatusForbidden)
-			return
-		}
+	if b.shouldBlockAgent(agent) {
+		log.Infof("blocked request with user agent %v because it contained %v", agent, agent)
+		log.Debugf("Checked request in %v", time.Now().Sub(startTime))
+		http.Error(rw, "blocked", http.StatusForbidden)
+		return
 	}
 
 	log.Debugf("Checked request in %v", time.Now().Sub(startTime))
 	b.next.ServeHTTP(rw, req)
+}
+
+func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
+	for _, badIp := range b.ipBlocklist {
+		if addr == badIp {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *BotBlocker) shouldBlockAgent(userAgent string) bool {
+	userAgent = strings.ToLower(strings.TrimSpace(userAgent))
+	for _, badAgent := range b.userAgentBlockList {
+		if strings.Contains(userAgent, badAgent) {
+			return true
+		}
+	}
+	return false
 }
