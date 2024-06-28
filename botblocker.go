@@ -37,13 +37,13 @@ type BotBlocker struct {
 	Config
 }
 
-func (b *BotBlocker) Update() error {
+func (b *BotBlocker) update() error {
 	startTime := time.Now()
-	err := b.UpdateIps()
+	err := b.updateIps()
 	if err != nil {
 		return fmt.Errorf("failed to update IP blocklists: %w", err)
 	}
-	err = b.UpdateUserAgents()
+	err = b.updateUserAgents()
 	if err != nil {
 		return fmt.Errorf("failed to update IP blocklists: %w", err)
 	}
@@ -54,7 +54,7 @@ func (b *BotBlocker) Update() error {
 	return nil
 }
 
-func (b *BotBlocker) UpdateIps() error {
+func (b *BotBlocker) updateIps() error {
 	ipBlockList := make([]netip.Addr, 0)
 
 	log.Info("Updating IP blocklist")
@@ -84,7 +84,7 @@ func (b *BotBlocker) UpdateIps() error {
 	return nil
 }
 
-func (b *BotBlocker) UpdateUserAgents() error {
+func (b *BotBlocker) updateUserAgents() error {
 	userAgentBlockList := make([]string, 0)
 
 	log.Info("Updating user agent blocklist")
@@ -122,7 +122,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		next:   next,
 		Config: *config,
 	}
-	err = blocker.Update()
+	err = blocker.update()
 	if err != nil {
 		return nil, fmt.Errorf("failed to update blocklists: %s", err)
 	}
@@ -131,7 +131,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if time.Now().Sub(b.lastUpdated) > time.Duration(time.Hour) {
-		err := b.Update()
+		err := b.update()
 		if err != nil {
 			log.Errorf("failed to update blocklist: %v", err)
 		}
