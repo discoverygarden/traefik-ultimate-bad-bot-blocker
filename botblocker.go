@@ -181,6 +181,10 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	startTime := time.Now()
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
+	timer := func() {
+		log.Debugf("Checked request in %v", time.Now().Sub(startTime))
+	}
+	defer timer()
 
 	remoteAddrPort, err := netip.ParseAddrPort(req.RemoteAddr)
 	if err != nil {
@@ -189,7 +193,6 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	if b.shouldBlockIp(remoteAddrPort.Addr()) {
 		log.Infof("blocked request with from IP %v", remoteAddrPort.Addr())
-		log.Debugf("Checked request in %v", time.Now().Sub(startTime))
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
@@ -197,12 +200,10 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	agent := strings.ToLower(req.UserAgent())
 	if b.shouldBlockAgent(agent) {
 		log.Infof("blocked request with user agent %v because it contained %v", agent, agent)
-		log.Debugf("Checked request in %v", time.Now().Sub(startTime))
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
 
-	log.Debugf("Checked request in %v", time.Now().Sub(startTime))
 	b.next.ServeHTTP(rw, req)
 }
 
