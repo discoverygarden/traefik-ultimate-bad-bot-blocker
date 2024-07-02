@@ -74,6 +74,21 @@ services:
     networks:
       test:
         ipv4_address: 10.10.10.3
+  blocked-cidr:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      while true; do
+        curl whoami.example.com 2>/dev/null
+        sleep 5
+      done
+    networks:
+      test:
+        ipv4_address: 10.10.20.2
   lists:
     image: nginx
     volumes:

@@ -18,7 +18,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func equalIps(a, b []netip.Addr) bool {
+func equalPrefixes(a, b []netip.Prefix) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -36,13 +36,23 @@ func TestReadIps(t *testing.T) {
 		t.Fatal("Failed to open testfile")
 	}
 
-	expected := []netip.Addr{
-		netip.AddrFrom4([4]byte{10, 10, 10, 2}),
-		netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+	expected := []netip.Prefix{
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 10, 2}),
+			32,
+		),
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+			32,
+		),
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 20, 0}),
+			24,
+		),
 	}
-	ips, err := readIps(f)
-	if !equalIps(ips, expected) || err != nil {
-		t.Fatalf("readIps(f) = %v, %e; want %v, <nil>", ips, err, expected)
+	prefixes, err := readPrefixes(f)
+	if !equalPrefixes(prefixes, expected) || err != nil {
+		t.Fatalf("readPrefixes(f) = %v, %e; want %v, <nil>", prefixes, err, expected)
 	}
 }
 
@@ -61,9 +71,15 @@ func TestReadUserAgents(t *testing.T) {
 
 func TestShouldBlockIp(t *testing.T) {
 	botBlocker := BotBlocker{
-		ipBlocklist: []netip.Addr{
-			netip.AddrFrom4([4]byte{10, 10, 10, 2}),
-			netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+		prefixBlocklist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 10, 2}),
+				32,
+			),
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+				32,
+			),
 		},
 	}
 	badIp := netip.AddrFrom4([4]byte{10, 10, 10, 2})
@@ -76,9 +92,15 @@ func TestShouldBlockIp(t *testing.T) {
 
 func TestShouldAllowIp(t *testing.T) {
 	botBlocker := BotBlocker{
-		ipBlocklist: []netip.Addr{
-			netip.AddrFrom4([4]byte{10, 10, 10, 2}),
-			netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+		prefixBlocklist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 10, 2}),
+				32,
+			),
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+				32,
+			),
 		},
 	}
 	ip := netip.AddrFrom4([4]byte{10, 10, 10, 2})
@@ -86,6 +108,40 @@ func TestShouldAllowIp(t *testing.T) {
 	blocked := botBlocker.shouldBlockIp(ip)
 	if !blocked {
 		t.Fatalf("botBlocker.shouldBlockIp(%v) = %t; want false", ip, blocked)
+	}
+}
+
+func TestShouldBlockIpCidr(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixBlocklist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 10, 0}),
+				24,
+			),
+		},
+	}
+	badIp := netip.AddrFrom4([4]byte{10, 10, 10, 2})
+
+	blocked := botBlocker.shouldBlockIp(badIp)
+	if !blocked {
+		t.Fatalf("botBlocker.shouldBlockIp(%v) = %t; want true", badIp, blocked)
+	}
+}
+
+func TestShouldAllowIpCidr(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixBlocklist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 10, 0}),
+				24,
+			),
+		},
+	}
+	goodIp := netip.AddrFrom4([4]byte{10, 10, 20, 2})
+
+	blocked := botBlocker.shouldBlockIp(goodIp)
+	if blocked {
+		t.Fatalf("botBlocker.shouldBlockIp(%v) = %t; want false", goodIp, blocked)
 	}
 }
 
