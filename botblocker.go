@@ -98,7 +98,16 @@ func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
 			if err != nil {
 				return []netip.Prefix{}, err
 			}
-			prefix = netip.PrefixFrom(addr, 32)
+			var bits int
+			if addr.Is4() {
+				bits = 32
+			} else {
+				bits = 128
+			}
+			prefix, err = addr.Prefix(bits)
+			if err != nil {
+				return []netip.Prefix{}, err
+			}
 		}
 		prefixes = append(prefixes, prefix)
 	}

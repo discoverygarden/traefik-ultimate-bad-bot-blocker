@@ -49,6 +49,10 @@ func TestReadIps(t *testing.T) {
 			netip.AddrFrom4([4]byte{10, 10, 20, 0}),
 			24,
 		),
+		netip.PrefixFrom(
+			netip.AddrFrom16([16]byte{0x20, 0x01, 0xd, 0xb8, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55, 0x66, 0x66, 0x77, 0x77, 0x88, 0x88}),
+			128,
+		),
 	}
 	prefixes, err := readPrefixes(f)
 	if !equalPrefixes(prefixes, expected) || err != nil {
