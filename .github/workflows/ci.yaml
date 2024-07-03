@@ -1,8 +1,10 @@
-name: Test
+name: CI
+# yamllint thinks the `on` key is being turned into `true`
+# yamllint disable-line rule:truthy
 on: [push]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -16,3 +18,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Run tests
         run: go test -v .
+  lint-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint YAML
+        run: yamllint .
