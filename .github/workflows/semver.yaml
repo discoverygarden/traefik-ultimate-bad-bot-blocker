@@ -1,7 +1,9 @@
 name: Auto Semver
+# yamllint thinks the `on` key is being turned into `true`
+# yamllint disable-line rule:truthy
 on:
   pull_request:
-    types: 
+    types:
       - closed
     branches:
       - main
