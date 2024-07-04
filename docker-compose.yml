@@ -2,7 +2,7 @@ name: traefik-bad-bot-blocker
 services:
   traefik:
     image: traefik:3.0
-    command:      
+    command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entryPoints.web.address=:80"
@@ -33,14 +33,14 @@ services:
     image: quay.io/curl/curl
     external_links:
       - traefik:whoami.example.com
-    entrypoint: 
-    - /bin/sh
-    - -c 
-    - |
-      while true; do
-        curl whoami.example.com 2>/dev/null | grep X-Real-Ip
-        sleep 5
-      done
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl whoami.example.com 2>/dev/null | grep X-Real-Ip
+          sleep 5
+        done
     networks:
       test:
         ipv4_address: 10.10.10.1
@@ -48,14 +48,14 @@ services:
     image: quay.io/curl/curl
     external_links:
       - traefik:whoami.example.com
-    entrypoint: 
-    - /bin/sh
-    - -c 
-    - |
-      while true; do
-        curl whoami.example.com 2>/dev/null 
-        sleep 5
-      done
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl whoami.example.com 2>/dev/null
+          sleep 5
+        done
     networks:
       test:
         ipv4_address: 10.10.10.2
@@ -63,17 +63,32 @@ services:
     image: quay.io/curl/curl
     external_links:
       - traefik:whoami.example.com
-    entrypoint: 
-    - /bin/sh
-    - -c 
-    - |
-      while true; do
-        curl -A 'Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US' whoami.example.com 2>/dev/null 
-        sleep 5
-      done
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl -A 'Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US' whoami.example.com 2>/dev/null
+          sleep 5
+        done
     networks:
       test:
         ipv4_address: 10.10.10.3
+  blocked-cidr:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl whoami.example.com 2>/dev/null
+          sleep 5
+        done
+    networks:
+      test:
+        ipv4_address: 10.10.20.2
   lists:
     image: nginx
     volumes:

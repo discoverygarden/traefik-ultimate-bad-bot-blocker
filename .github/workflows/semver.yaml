@@ -1,0 +1,20 @@
+name: Auto Semver
+# yamllint thinks the `on` key is being turned into `true`
+# yamllint disable-line rule:truthy
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+jobs:
+  update:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+      - name: Run Auto Semver
+        uses: discoverygarden/auto-semver@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
