@@ -26,4 +26,4 @@ The blocklists should be acccessible via http/s and be a plain text list of IP a
 
 ## Testing
 
-Running `got test` will run a set of unit tests. Running `docker compose up` will start an end to end testing environment where `allowed-*` containers should be able to make requests, while `blocked-*` containers should fail.
+Running `go test` will run a set of unit tests. Running `docker compose up` will start an end to end testing environment where `allowed-*` containers should be able to make requests, while `blocked-*` containers should fail.
