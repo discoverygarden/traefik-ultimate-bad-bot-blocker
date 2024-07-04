@@ -50,7 +50,7 @@ func (b *BotBlocker) update() error {
 	}
 
 	b.lastUpdated = time.Now()
-	duration := time.Now().Sub(startTime)
+	duration := time.Since(startTime)
 	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Duration: ", duration)
 	return nil
 }
@@ -173,7 +173,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 }
 
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	if time.Now().Sub(b.lastUpdated) > time.Duration(time.Hour) {
+	if time.Since(b.lastUpdated) > time.Hour {
 		err := b.update()
 		if err != nil {
 			log.Errorf("failed to update blocklist: %v", err)
@@ -182,7 +182,7 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	startTime := time.Now()
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
 	timer := func() {
-		log.Debugf("Checked request in %v", time.Now().Sub(startTime))
+		log.Debugf("Checked request in %v", time.Since(startTime))
 	}
 	defer timer()
 
