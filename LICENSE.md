@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2021 Alexander Cairns
+Copyright (c) 2024 Alexander Cairns
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
