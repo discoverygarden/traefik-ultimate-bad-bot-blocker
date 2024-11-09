@@ -1,6 +1,6 @@
 # Traefik Bad Bot Blocker
 
-Traefik Plugin based on the [Apache Ultimate Bad Bot Blocker](https://github.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/tree/master). It blocks IP addresses and useragents based on subscribed blocklists.
+Traefik Plugin based on the [Apache Ultimate Bad Bot Blocker](https://github.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/tree/master). It blocks IP addresses, IP ranges in CIDR notation and useragents based on subscribed blocklists.
 
 ## Configuration
 
@@ -22,9 +22,9 @@ spec:
 
 ## Blocklists
 
-The blocklists should be plain text list files of IP address or useragents that are acccessible via http/s.
+The blocklists should be plain text list files of IP address, IP ranges in CIDR notation or useragents that are acccessible via http/s.
 
-This plugin is compatible with the IP and useragent generator lists from [Apache Ultimate Bad Bot Blocker](https://github.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/tree/master/_generator_lists) and [NGINX Ultimage Bad Bot Blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/tree/master/_generator_lists). The NGINX lists are preferred as they are updated more often. It is possible to subscribe to multiple lists, including the "good bots" allowlists should you want to deny them access to your services.
+This plugin is compatible with thegenerator lists of IP adresses, IP ranges and useragents from [Apache Ultimate Bad Bot Blocker](https://github.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/tree/master/_generator_lists) and [NGINX Ultimage Bad Bot Blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/tree/master/_generator_lists). The NGINX lists are preferred as they are updated more often. It is possible to subscribe to multiple lists, including the "good bots" allowlists should you want to deny them access to your services.
 
 ## Testing
 
