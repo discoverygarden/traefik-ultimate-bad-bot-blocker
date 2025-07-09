@@ -1,7 +1,7 @@
 name: traefik-bad-bot-blocker
 services:
   traefik:
-    image: traefik:3.0
+    image: traefik:v3.4
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -15,6 +15,8 @@ services:
       - "./:/plugins-local/src/github.com/discoverygarden/traefik-ultimate-bad-bot-blocker"
     networks:
       test:
+    depends_on:
+      - lists
   whoami:
     image: traefik/whoami
     labels:
@@ -24,7 +26,7 @@ services:
       - "traefik.http.routers.whoami.middlewares=botblocker@docker"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[1]=http://lists/ip-blocklist"
-      - "traefik.http.middlewares.botblocker.plugin.botblocker.loglevel=INFO"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.loglevel=DEBUG"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[1]=http://lists/useragent-blocklist"
     networks:
@@ -38,12 +40,16 @@ services:
       - -c
       - |
         while true; do
-          curl whoami.example.com 2>/dev/null | grep X-Real-Ip
+          curl -m 5s whoami.example.com 2>/dev/null | grep X-Real-Ip
           sleep 5
         done
     networks:
       test:
         ipv4_address: 10.10.10.1
+    depends_on:
+      - whoami
+      - traefik
+    stop_grace_period: 0s
   blocked-ip:
     image: quay.io/curl/curl
     external_links:
@@ -53,12 +59,16 @@ services:
       - -c
       - |
         while true; do
-          curl whoami.example.com 2>/dev/null
+          curl -m 5s whoami.example.com 2>/dev/null
           sleep 5
         done
     networks:
       test:
         ipv4_address: 10.10.10.2
+    depends_on:
+      - whoami
+      - traefik
+    stop_grace_period: 0s
   blocked-agent:
     image: quay.io/curl/curl
     external_links:
@@ -68,12 +78,16 @@ services:
       - -c
       - |
         while true; do
-          curl -A 'Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US' whoami.example.com 2>/dev/null
+          curl -m 5s -A 'Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US' whoami.example.com 2>/dev/null
           sleep 5
         done
     networks:
       test:
         ipv4_address: 10.10.10.3
+    depends_on:
+      - whoami
+      - traefik
+    stop_grace_period: 0s
   blocked-cidr:
     image: quay.io/curl/curl
     external_links:
@@ -83,12 +97,16 @@ services:
       - -c
       - |
         while true; do
-          curl whoami.example.com 2>/dev/null
+          curl -m 5s whoami.example.com 2>/dev/null
           sleep 5
         done
     networks:
       test:
         ipv4_address: 10.10.20.2
+    depends_on:
+      - whoami
+      - traefik
+    stop_grace_period: 0s
   lists:
     image: nginx
     volumes:

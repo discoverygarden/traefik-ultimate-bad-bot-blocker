@@ -181,9 +181,8 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	startTime := time.Now()
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
-	timer := func() {
-		log.Debugf("Checked request in %v", time.Since(startTime))
-	}
+	// Using an external plugin to avoid https://github.com/traefik/yaegi/issues/1697
+	timer := getTimer(startTime)
 	defer timer()
 
 	remoteAddrPort, err := netip.ParseAddrPort(req.RemoteAddr)
@@ -224,4 +223,10 @@ func (b *BotBlocker) shouldBlockAgent(userAgent string) bool {
 		}
 	}
 	return false
+}
+
+func getTimer(startTime time.Time) func() {
+	return func() {
+		log.Debugf("Checked request in %v", time.Since(startTime))
+	}
 }
