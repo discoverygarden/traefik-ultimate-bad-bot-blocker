@@ -191,7 +191,7 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if b.shouldBlockIp(remoteAddrPort.Addr()) {
-		log.Infof("blocked request with from IP %v", remoteAddrPort.Addr())
+		log.Infof("blocked request with from IP \"%v\"", remoteAddrPort.Addr())
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
@@ -199,7 +199,7 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	agent := strings.ToLower(req.UserAgent())
 	blocked, badAgent := b.shouldBlockAgent(agent)
 	if blocked {
-		log.Infof("blocked request with user agent %v because it contained %v", agent, badAgent)
+		log.Infof("blocked request with user agent \"%v\" because it contained \"%v\"", agent, badAgent)
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
