@@ -197,8 +197,9 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	agent := strings.ToLower(req.UserAgent())
-	if b.shouldBlockAgent(agent) {
-		log.Infof("blocked request with user agent %v because it contained %v", agent, agent)
+	blocked, badAgent := b.shouldBlockAgent(agent)
+	if blocked {
+		log.Infof("blocked request with user agent %v because it contained %v", agent, badAgent)
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
@@ -215,14 +216,14 @@ func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
 	return false
 }
 
-func (b *BotBlocker) shouldBlockAgent(userAgent string) bool {
+func (b *BotBlocker) shouldBlockAgent(userAgent string) (bool, string) {
 	userAgent = strings.ToLower(strings.TrimSpace(userAgent))
 	for _, badAgent := range b.userAgentBlockList {
 		if strings.Contains(userAgent, badAgent) {
-			return true
+			return true, badAgent
 		}
 	}
-	return false
+	return false, ""
 }
 
 func getTimer(startTime time.Time) func() {

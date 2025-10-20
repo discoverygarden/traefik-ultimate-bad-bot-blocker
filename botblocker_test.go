@@ -150,16 +150,20 @@ func TestShouldAllowIpCidr(t *testing.T) {
 }
 
 func TestShouldBlockUserAgent(t *testing.T) {
+	badAgent := "nintendobrowser"
 	botBlocker := BotBlocker{
 		userAgentBlockList: []string{
-			"nintendobrowser",
+			badAgent,
 		},
 	}
-	badUserAgent := "Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US"
+	requestAgent := "Mozilla/5.0 (Nintendo WiiU) AppleWebKit/536.30 (KHTML, like Gecko) NX/3.0.4.2.12 NintendoBrowser/4.3.1.11264.US"
 
-	blocked := botBlocker.shouldBlockAgent(badUserAgent)
+	blocked, blockedAgent := botBlocker.shouldBlockAgent(requestAgent)
 	if !blocked {
-		t.Fatalf("botBlocker.shouldBlockAgent(%s) = %t; want true", badUserAgent, blocked)
+		t.Fatalf("botBlocker.shouldBlockAgent(%s) = %t; want true", requestAgent, blocked)
+	}
+	if blockedAgent != badAgent {
+		t.Fatalf("botBlocker.shouldBlockAgent(%s) = %s; want \"\"", requestAgent, blockedAgent)
 	}
 }
 
@@ -171,8 +175,11 @@ func TestShouldAlowUserAgent(t *testing.T) {
 	}
 	userAgent := "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
-	blocked := botBlocker.shouldBlockAgent(userAgent)
+	blocked, badAgent := botBlocker.shouldBlockAgent(userAgent)
 	if blocked {
 		t.Fatalf("botBlocker.shouldBlockAgent(%s) = %t; want false", userAgent, blocked)
+	}
+	if badAgent != "" {
+		t.Fatalf("botBlocker.shouldBlockAgent(%s) = %s; want \"\"", userAgent, badAgent)
 	}
 }
