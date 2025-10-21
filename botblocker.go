@@ -184,15 +184,16 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
 	// Using an external plugin to avoid https://github.com/traefik/yaegi/issues/1697
 	timer := getTimer(startTime)
-	defer timer()
 
 	remoteAddrPort, err := netip.ParseAddrPort(req.RemoteAddr)
 	if err != nil {
+		timer()
 		http.Error(rw, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if b.shouldBlockIp(remoteAddrPort.Addr()) {
 		log.Infof("blocked request with from IP \"%v\"", remoteAddrPort.Addr())
+		timer()
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
@@ -200,15 +201,18 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	agent := strings.ToLower(req.UserAgent())
 	blocked, badAgent, err := b.shouldBlockAgent(agent)
 	if err != nil {
+		timer()
 		http.Error(rw, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if blocked {
 		log.Infof("blocked request with user agent \"%v\" because it contained \"%v\"", agent, badAgent)
+		timer()
 		http.Error(rw, "blocked", http.StatusForbidden)
 		return
 	}
 
+	timer()
 	b.next.ServeHTTP(rw, req)
 }
 
