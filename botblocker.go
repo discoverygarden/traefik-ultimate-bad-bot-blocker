@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 
 	"net/http"
 	"net/netip"
@@ -197,7 +198,11 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	agent := strings.ToLower(req.UserAgent())
-	blocked, badAgent := b.shouldBlockAgent(agent)
+	blocked, badAgent, err := b.shouldBlockAgent(agent)
+	if err != nil {
+		http.Error(rw, "internal error", http.StatusInternalServerError)
+		return
+	}
 	if blocked {
 		log.Infof("blocked request with user agent \"%v\" because it contained \"%v\"", agent, badAgent)
 		http.Error(rw, "blocked", http.StatusForbidden)
@@ -216,14 +221,23 @@ func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
 	return false
 }
 
-func (b *BotBlocker) shouldBlockAgent(userAgent string) (bool, string) {
+func (b *BotBlocker) shouldBlockAgent(userAgent string) (bool, string, error) {
 	userAgent = strings.ToLower(strings.TrimSpace(userAgent))
 	for _, badAgent := range b.userAgentBlockList {
+		// fast check with contains
 		if strings.Contains(userAgent, badAgent) {
-			return true, badAgent
+			// verify with regex
+			pattern := fmt.Sprintf(`(?:\b)%s(?:\b)`, badAgent)
+			matched, err := regexp.Match(pattern, []byte(userAgent))
+			if err != nil {
+				return false, "", fmt.Errorf("failed to check user agent %s: %e", userAgent, err)
+			}
+			if matched {
+				return true, badAgent, nil
+			}
 		}
 	}
-	return false, ""
+	return false, "", nil
 }
 
 func getTimer(startTime time.Time) func() {
