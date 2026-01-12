@@ -185,7 +185,10 @@ func (b *BotBlocker) UpdateLoop(ctx context.Context) {
       case <- time.After(time.Hour):
         break
     }
-    b.update()
+    err := b.update()
+    if err != nil {
+      log.Errorf("failed to update blocklist: %v", err)
+    }
   }
 }
 
