@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sync"
 
 	"net/http"
 	"net/netip"
@@ -35,7 +36,8 @@ type BotBlocker struct {
 	name               string
 	prefixBlocklist    []netip.Prefix
 	userAgentBlockList []string
-	lastUpdated        time.Time
+	prefixMutex        sync.RWMutex
+	uaMutex            sync.RWMutex
 	Config
 }
 
@@ -50,7 +52,6 @@ func (b *BotBlocker) update() error {
 		return fmt.Errorf("failed to update user agent blocklists: %w", err)
 	}
 
-	b.lastUpdated = time.Now()
 	duration := time.Since(startTime)
 	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Duration: ", duration)
 	return nil
@@ -76,7 +77,9 @@ func (b *BotBlocker) updateIps() error {
 		prefixBlockList = append(prefixBlockList, prefixes...)
 	}
 
+	b.prefixMutex.Lock()
 	b.prefixBlocklist = prefixBlockList
+	b.prefixMutex.Unlock()
 
 	return nil
 }
@@ -149,7 +152,9 @@ func (b *BotBlocker) updateUserAgents() error {
 		userAgentBlockList = append(userAgentBlockList, agents...)
 	}
 
+	b.uaMutex.Lock()
 	b.userAgentBlockList = userAgentBlockList
+	b.uaMutex.Unlock()
 
 	return nil
 }
@@ -232,6 +237,9 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
+	b.prefixMutex.RLock()
+	defer b.prefixMutex.RUnlock()
+
 	for _, badPrefix := range b.prefixBlocklist {
 		if badPrefix.Contains(addr) {
 			return true
@@ -242,6 +250,8 @@ func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
 
 func (b *BotBlocker) shouldBlockAgent(userAgent string) (bool, string, error) {
 	userAgent = strings.ToLower(strings.TrimSpace(userAgent))
+	b.uaMutex.RLock()
+	defer b.uaMutex.RUnlock()
 	for _, badAgent := range b.userAgentBlockList {
 		// fast check with contains
 		if strings.Contains(userAgent, badAgent) {
