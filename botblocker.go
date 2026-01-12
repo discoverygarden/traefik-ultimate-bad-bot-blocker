@@ -170,16 +170,26 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	if err != nil {
 		return nil, fmt.Errorf("failed to update blocklists: %s", err)
 	}
+
+	go blocker.UpdateLoop(ctx)
+
 	return &blocker, nil
 }
 
+func (b *BotBlocker) UpdateLoop(ctx context.Context) {
+  for {
+    select {
+      case <- ctx.Done():
+        return
+
+      case <- time.After(time.Hour):
+        break
+    }
+    b.update()
+  }
+}
+
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	if time.Since(b.lastUpdated) > time.Hour {
-		err := b.update()
-		if err != nil {
-			log.Errorf("failed to update blocklist: %v", err)
-		}
-	}
 	startTime := time.Now()
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
 	// Using an external plugin to avoid https://github.com/traefik/yaegi/issues/1697
