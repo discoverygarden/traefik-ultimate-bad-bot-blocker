@@ -180,11 +180,11 @@ func (b *BotBlocker) UpdateLoop(ctx context.Context) {
   for {
     select {
       case <- ctx.Done():
-        log.Debugf("Context stopped; stopping update loop.")
+        log.Info("Context stopped; stopping update loop.")
         return
 
       case <- time.After(time.Hour):
-        log.Debugf("Update loop time elapsed; updating lists.")
+        log.Debug("Update loop time elapsed; updating lists.")
         break
     }
     err := b.update()
