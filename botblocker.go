@@ -182,22 +182,23 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 }
 
 func (b *BotBlocker) UpdateLoop(ctx context.Context) {
-  for {
-    select {
-      case <- ctx.Done():
-        log.Info("Context stopped; stopping update loop.")
-        return
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("Context stopped; stopping update loop.")
+			return
 
-      case <- time.After(time.Hour):
-        log.Debug("Update loop time elapsed; updating lists.")
-        break
-    }
-    err := b.update()
-    if err != nil {
-      log.Errorf("failed to update blocklist: %v", err)
-    }
-  }
+		case <-time.After(time.Hour):
+			log.Debug("Update loop time elapsed; updating lists.")
+			break
+		}
+		err := b.update()
+		if err != nil {
+			log.Errorf("failed to update blocklist: %v", err)
+		}
+	}
 }
+
 
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	startTime := time.Now()
