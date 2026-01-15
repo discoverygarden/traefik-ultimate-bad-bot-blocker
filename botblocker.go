@@ -69,6 +69,7 @@ func (b *BotBlocker) updateIps() (int, int, error) {
 			return 0, 0, fmt.Errorf("failed fetch CIDR list: %w", err)
 		}
 		if resp.StatusCode > 299 {
+			resp.Body.Close()
 			return 0, 0, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
 		}
 
