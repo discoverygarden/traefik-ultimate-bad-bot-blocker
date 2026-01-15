@@ -168,6 +168,9 @@ func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
 			currentBatch = make([]string, 0, batchSize)
 		}
 	}
+	// Check for scanner error but proceed to clean up and close channels
+	scanErr := scanner.Err()
+
 	if len(currentBatch) > 0 {
 		batches <- currentBatch
 	}
@@ -175,7 +178,12 @@ func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
 	wg.Wait()
 	close(results)
 
-	return <-done, nil
+	prefixes := <-done
+	if scanErr != nil {
+		return nil, scanErr
+	}
+
+	return prefixes, nil
 }
 
 func readUserAgents(userAgentReader io.ReadCloser) ([]string, error) {
