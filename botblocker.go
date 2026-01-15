@@ -85,38 +85,82 @@ func (b *BotBlocker) updateIps() error {
 }
 
 func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
-	prefixes := make([]netip.Prefix, 0)
 	defer prefixReader.Close()
+
 	scanner := bufio.NewScanner(prefixReader)
-	for scanner.Scan() {
-		entry := strings.TrimSpace(scanner.Text())
-		var prefix netip.Prefix
-		if strings.Contains(entry, "/") {
-			var err error
-			prefix, err = netip.ParsePrefix(entry)
-			if err != nil {
-				return []netip.Prefix{}, err
+
+	// Channels for batches
+	batchSize := 1000
+	batches := make(chan []string, 16)
+	results := make(chan []netip.Prefix, 16)
+	var wg sync.WaitGroup
+
+	// Start workers
+	workers := 4 // Sweet spot often around CPU count
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range batches {
+				localPrefixes := make([]netip.Prefix, 0, len(batch))
+				for _, line := range batch {
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
+					}
+
+					if strings.Contains(line, "/") {
+						prefix, err := netip.ParsePrefix(line)
+						if err == nil {
+							localPrefixes = append(localPrefixes, prefix)
+						}
+					} else {
+						addr, err := netip.ParseAddr(line)
+						if err == nil {
+							var bits int
+							if addr.Is4() {
+								bits = 32
+							} else {
+								bits = 128
+							}
+							prefix, _ := addr.Prefix(bits)
+							localPrefixes = append(localPrefixes, prefix)
+						}
+					}
+				}
+				results <- localPrefixes
 			}
-		} else {
-			addr, err := netip.ParseAddr(entry)
-			if err != nil {
-				return []netip.Prefix{}, err
-			}
-			var bits int
-			if addr.Is4() {
-				bits = 32
-			} else {
-				bits = 128
-			}
-			prefix, err = addr.Prefix(bits)
-			if err != nil {
-				return []netip.Prefix{}, err
-			}
-		}
-		prefixes = append(prefixes, prefix)
+		}()
 	}
 
-	return prefixes, nil
+	// Result collector
+	done := make(chan []netip.Prefix)
+	go func() {
+		list := make([]netip.Prefix, 0, 4096)
+		for batchResult := range results {
+			list = append(list, batchResult...)
+		}
+		done <- list
+	}()
+
+	// Feeder
+	currentBatch := make([]string, 0, batchSize)
+	for scanner.Scan() {
+		text := scanner.Text() // Allocate string here, sadly necessary for netip
+		currentBatch = append(currentBatch, text)
+		if len(currentBatch) >= batchSize {
+			batches <- currentBatch
+			currentBatch = make([]string, 0, batchSize)
+		}
+	}
+	if len(currentBatch) > 0 {
+		batches <- currentBatch
+	}
+	close(batches)
+	wg.Wait()
+	close(results)
+
+	return <-done, nil
 }
 
 func readUserAgents(userAgentReader io.ReadCloser) ([]string, error) {
@@ -198,7 +242,6 @@ func (b *BotBlocker) UpdateLoop(ctx context.Context) {
 		}
 	}
 }
-
 
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	startTime := time.Now()
