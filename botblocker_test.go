@@ -82,7 +82,10 @@ func createTestBlocker(prefixes []netip.Prefix) *BotBlocker {
 		if p.IsSingleIP() {
 			ips[p.Addr()] = struct{}{}
 		} else {
-			cidrs.Insert(p)
+			if err := cidrs.Insert(p); err != nil {
+				// panic in test helper is acceptable
+				panic(err)
+			}
 		}
 	}
 	return &BotBlocker{

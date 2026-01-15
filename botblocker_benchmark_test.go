@@ -46,7 +46,9 @@ func initBenchmarkBlocker() {
 		if p.IsSingleIP() {
 			ips[p.Addr()] = struct{}{}
 		} else {
-			cidrs.Insert(p)
+			if err := cidrs.Insert(p); err != nil {
+				panic(err)
+			}
 		}
 	}
 
