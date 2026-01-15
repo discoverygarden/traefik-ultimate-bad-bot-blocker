@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils"
+	"github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils"
+	log "github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils/log"
 )
 
 type Config struct {
@@ -34,7 +35,8 @@ func CreateConfig() *Config {
 type BotBlocker struct {
 	next               http.Handler
 	name               string
-	prefixBlocklist    []netip.Prefix
+	blockedIPs         map[netip.Addr]struct{}
+	blockedCIDRs       *utils.CIDRBlocklist
 	userAgentBlockList []string
 	prefixMutex        sync.RWMutex
 	uaMutex            sync.RWMutex
@@ -43,7 +45,7 @@ type BotBlocker struct {
 
 func (b *BotBlocker) update() error {
 	startTime := time.Now()
-	err := b.updateIps()
+	count, err := b.updateIps()
 	if err != nil {
 		return fmt.Errorf("failed to update CIDR blocklists: %w", err)
 	}
@@ -53,35 +55,49 @@ func (b *BotBlocker) update() error {
 	}
 
 	duration := time.Since(startTime)
-	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Duration: ", duration)
+	log.Info("Updated block lists. Blocked CIDRs: ", count, " Duration: ", duration)
 	return nil
 }
 
-func (b *BotBlocker) updateIps() error {
-	prefixBlockList := make([]netip.Prefix, 0)
+func (b *BotBlocker) updateIps() (int, error) {
+	prefixList := make([]netip.Prefix, 0)
 
 	log.Info("Updating CIDR blocklist")
 	for _, url := range b.IpBlocklistUrls {
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("failed fetch CIDR list: %w", err)
+			return 0, fmt.Errorf("failed fetch CIDR list: %w", err)
 		}
 		if resp.StatusCode > 299 {
-			return fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
+			return 0, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
 		}
 
 		prefixes, err := readPrefixes(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to update CIDRs: %e", err)
+			return 0, fmt.Errorf("failed to update CIDRs: %e", err)
 		}
-		prefixBlockList = append(prefixBlockList, prefixes...)
+		prefixList = append(prefixList, prefixes...)
+	}
+
+	newBlockedIPs := make(map[netip.Addr]struct{})
+	newBlockedCIDRs := utils.NewCIDRBlocklist()
+
+	count := 0
+	for _, p := range prefixList {
+		if p.IsSingleIP() {
+			newBlockedIPs[p.Addr()] = struct{}{}
+		} else {
+			newBlockedCIDRs.Insert(p)
+		}
+		count++
 	}
 
 	b.prefixMutex.Lock()
-	b.prefixBlocklist = prefixBlockList
+	b.blockedIPs = newBlockedIPs
+	b.blockedCIDRs = newBlockedCIDRs
 	b.prefixMutex.Unlock()
 
-	return nil
+	return count, nil
 }
 
 func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
@@ -117,13 +133,7 @@ func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
 					} else {
 						addr, err := netip.ParseAddr(line)
 						if err == nil {
-							var bits int
-							if addr.Is4() {
-								bits = 32
-							} else {
-								bits = 128
-							}
-							prefix, _ := addr.Prefix(bits)
+							prefix := netip.PrefixFrom(addr, addr.BitLen())
 							localPrefixes = append(localPrefixes, prefix)
 						}
 					}
@@ -284,11 +294,16 @@ func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
 	b.prefixMutex.RLock()
 	defer b.prefixMutex.RUnlock()
 
-	for _, badPrefix := range b.prefixBlocklist {
-		if badPrefix.Contains(addr) {
-			return true
-		}
+	// Fast path: check single IP map
+	if _, ok := b.blockedIPs[addr]; ok {
+		return true
 	}
+
+	// Slow path: check CIDR trie
+	if b.blockedCIDRs != nil && b.blockedCIDRs.Contains(addr) {
+		return true
+	}
+
 	return false
 }
 
