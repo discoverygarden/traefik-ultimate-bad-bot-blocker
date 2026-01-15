@@ -45,7 +45,7 @@ type BotBlocker struct {
 
 func (b *BotBlocker) update() error {
 	startTime := time.Now()
-	count, err := b.updateIps()
+	cidrCount, ipCount, err := b.updateIps()
 	if err != nil {
 		return fmt.Errorf("failed to update CIDR blocklists: %w", err)
 	}
@@ -55,26 +55,26 @@ func (b *BotBlocker) update() error {
 	}
 
 	duration := time.Since(startTime)
-	log.Info("Updated block lists. Blocked CIDRs: ", count, " Duration: ", duration)
+	log.Info("Updated block lists. Blocked IPs: ", ipCount, " Blocked CIDRs: ", cidrCount, " Duration: ", duration)
 	return nil
 }
 
-func (b *BotBlocker) updateIps() (int, error) {
+func (b *BotBlocker) updateIps() (int, int, error) {
 	prefixList := make([]netip.Prefix, 0)
 
 	log.Info("Updating CIDR blocklist")
 	for _, url := range b.IpBlocklistUrls {
 		resp, err := http.Get(url)
 		if err != nil {
-			return 0, fmt.Errorf("failed fetch CIDR list: %w", err)
+			return 0, 0, fmt.Errorf("failed fetch CIDR list: %w", err)
 		}
 		if resp.StatusCode > 299 {
-			return 0, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
+			return 0, 0, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
 		}
 
 		prefixes, err := readPrefixes(resp.Body)
 		if err != nil {
-			return 0, fmt.Errorf("failed to update CIDRs: %e", err)
+			return 0, 0, fmt.Errorf("failed to update CIDRs: %e", err)
 		}
 		prefixList = append(prefixList, prefixes...)
 	}
@@ -82,14 +82,19 @@ func (b *BotBlocker) updateIps() (int, error) {
 	newBlockedIPs := make(map[netip.Addr]struct{})
 	newBlockedCIDRs := utils.NewCIDRBlocklist()
 
-	count := 0
+	ipCount := 0
+	cidrCount := 0
 	for _, p := range prefixList {
 		if p.IsSingleIP() {
 			newBlockedIPs[p.Addr()] = struct{}{}
+			ipCount++
 		} else {
-			newBlockedCIDRs.Insert(p)
+			if err := newBlockedCIDRs.Insert(p); err != nil {
+				log.Errorf("failed to insert CIDR %v: %v", p, err)
+				continue
+			}
+			cidrCount++
 		}
-		count++
 	}
 
 	b.prefixMutex.Lock()
@@ -97,7 +102,7 @@ func (b *BotBlocker) updateIps() (int, error) {
 	b.blockedCIDRs = newBlockedCIDRs
 	b.prefixMutex.Unlock()
 
-	return count, nil
+	return cidrCount, ipCount, nil
 }
 
 func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
