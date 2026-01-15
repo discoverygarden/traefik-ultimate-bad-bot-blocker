@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils"
+	"github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils"
+	log "github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils/log"
 )
 
 type Config struct {
@@ -34,7 +35,8 @@ func CreateConfig() *Config {
 type BotBlocker struct {
 	next               http.Handler
 	name               string
-	prefixBlocklist    []netip.Prefix
+	blockedIPs         map[netip.Addr]struct{}
+	blockedCIDRs       *utils.CIDRBlocklist
 	userAgentBlockList []string
 	prefixMutex        sync.RWMutex
 	uaMutex            sync.RWMutex
@@ -43,7 +45,7 @@ type BotBlocker struct {
 
 func (b *BotBlocker) update() error {
 	startTime := time.Now()
-	err := b.updateIps()
+	cidrCount, ipCount, err := b.updateIps()
 	if err != nil {
 		return fmt.Errorf("failed to update CIDR blocklists: %w", err)
 	}
@@ -53,67 +55,133 @@ func (b *BotBlocker) update() error {
 	}
 
 	duration := time.Since(startTime)
-	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Duration: ", duration)
+	log.Info("Updated block lists. Blocked IPs: ", ipCount, " Blocked CIDRs: ", cidrCount, " Duration: ", duration)
 	return nil
 }
 
-func (b *BotBlocker) updateIps() error {
-	prefixBlockList := make([]netip.Prefix, 0)
+func (b *BotBlocker) updateIps() (int, int, error) {
+	prefixList := make([]netip.Prefix, 0)
 
 	log.Info("Updating CIDR blocklist")
 	for _, url := range b.IpBlocklistUrls {
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("failed fetch CIDR list: %w", err)
+			return 0, 0, fmt.Errorf("failed fetch CIDR list: %w", err)
 		}
 		if resp.StatusCode > 299 {
-			return fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
+			resp.Body.Close()
+			return 0, 0, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
 		}
 
 		prefixes, err := readPrefixes(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to update CIDRs: %e", err)
+			return 0, 0, fmt.Errorf("failed to update CIDRs: %w", err)
 		}
-		prefixBlockList = append(prefixBlockList, prefixes...)
+		prefixList = append(prefixList, prefixes...)
+	}
+
+	newBlockedIPs := make(map[netip.Addr]struct{})
+	newBlockedCIDRs := utils.NewCIDRBlocklist()
+
+	ipCount := 0
+	cidrCount := 0
+	for _, p := range prefixList {
+		if p.IsSingleIP() {
+			newBlockedIPs[p.Addr()] = struct{}{}
+			ipCount++
+		} else {
+			if err := newBlockedCIDRs.Insert(p); err != nil {
+				log.Errorf("failed to insert CIDR %v: %v", p, err)
+				continue
+			}
+			cidrCount++
+		}
 	}
 
 	b.prefixMutex.Lock()
-	b.prefixBlocklist = prefixBlockList
+	b.blockedIPs = newBlockedIPs
+	b.blockedCIDRs = newBlockedCIDRs
 	b.prefixMutex.Unlock()
 
-	return nil
+	return cidrCount, ipCount, nil
 }
 
 func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
-	prefixes := make([]netip.Prefix, 0)
 	defer prefixReader.Close()
+
 	scanner := bufio.NewScanner(prefixReader)
-	for scanner.Scan() {
-		entry := strings.TrimSpace(scanner.Text())
-		var prefix netip.Prefix
-		if strings.Contains(entry, "/") {
-			var err error
-			prefix, err = netip.ParsePrefix(entry)
-			if err != nil {
-				return []netip.Prefix{}, err
+
+	// Channels for batches
+	batchSize := 1000
+	batches := make(chan []string, 16)
+	results := make(chan []netip.Prefix, 16)
+	var wg sync.WaitGroup
+
+	// Start workers
+	workers := 4 // Sweet spot often around CPU count
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range batches {
+				localPrefixes := make([]netip.Prefix, 0, len(batch))
+				for _, line := range batch {
+					line = strings.TrimSpace(line)
+					if line == "" {
+						continue
+					}
+
+					if strings.Contains(line, "/") {
+						prefix, err := netip.ParsePrefix(line)
+						if err == nil {
+							localPrefixes = append(localPrefixes, prefix)
+						}
+					} else {
+						addr, err := netip.ParseAddr(line)
+						if err == nil {
+							prefix := netip.PrefixFrom(addr, addr.BitLen())
+							localPrefixes = append(localPrefixes, prefix)
+						}
+					}
+				}
+				results <- localPrefixes
 			}
-		} else {
-			addr, err := netip.ParseAddr(entry)
-			if err != nil {
-				return []netip.Prefix{}, err
-			}
-			var bits int
-			if addr.Is4() {
-				bits = 32
-			} else {
-				bits = 128
-			}
-			prefix, err = addr.Prefix(bits)
-			if err != nil {
-				return []netip.Prefix{}, err
-			}
+		}()
+	}
+
+	// Result collector
+	done := make(chan []netip.Prefix)
+	go func() {
+		list := make([]netip.Prefix, 0, 4096)
+		for batchResult := range results {
+			list = append(list, batchResult...)
 		}
-		prefixes = append(prefixes, prefix)
+		done <- list
+	}()
+
+	// Feeder
+	currentBatch := make([]string, 0, batchSize)
+	for scanner.Scan() {
+		text := scanner.Text() // Allocate string here, sadly necessary for netip
+		currentBatch = append(currentBatch, text)
+		if len(currentBatch) >= batchSize {
+			batches <- currentBatch
+			currentBatch = make([]string, 0, batchSize)
+		}
+	}
+	// Check for scanner error but proceed to clean up and close channels
+	scanErr := scanner.Err()
+
+	if len(currentBatch) > 0 {
+		batches <- currentBatch
+	}
+	close(batches)
+	wg.Wait()
+	close(results)
+
+	prefixes := <-done
+	if scanErr != nil {
+		return nil, scanErr
 	}
 
 	return prefixes, nil
@@ -199,7 +267,6 @@ func (b *BotBlocker) UpdateLoop(ctx context.Context) {
 	}
 }
 
-
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	startTime := time.Now()
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
@@ -241,11 +308,16 @@ func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
 	b.prefixMutex.RLock()
 	defer b.prefixMutex.RUnlock()
 
-	for _, badPrefix := range b.prefixBlocklist {
-		if badPrefix.Contains(addr) {
-			return true
-		}
+	// Fast path: check single IP map
+	if _, ok := b.blockedIPs[addr]; ok {
+		return true
 	}
+
+	// Slow path: check CIDR trie
+	if b.blockedCIDRs != nil && b.blockedCIDRs.Contains(addr) {
+		return true
+	}
+
 	return false
 }
 
