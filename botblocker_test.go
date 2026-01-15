@@ -4,6 +4,8 @@ import (
 	"net/netip"
 	"os"
 	"testing"
+
+	"github.com/discoverygarden/traefik-ultimate-bad-bot-blocker/utils"
 )
 
 func equalStrings(a, b []string) bool {
@@ -73,19 +75,33 @@ func TestReadUserAgents(t *testing.T) {
 	}
 }
 
-func TestShouldBlockIp(t *testing.T) {
-	botBlocker := BotBlocker{
-		prefixBlocklist: []netip.Prefix{
-			netip.PrefixFrom(
-				netip.AddrFrom4([4]byte{10, 10, 10, 2}),
-				32,
-			),
-			netip.PrefixFrom(
-				netip.AddrFrom4([4]byte{192, 168, 1, 1}),
-				32,
-			),
-		},
+func createTestBlocker(prefixes []netip.Prefix) *BotBlocker {
+	ips := make(map[netip.Addr]struct{})
+	cidrs := utils.NewCIDRBlocklist()
+	for _, p := range prefixes {
+		if p.IsSingleIP() {
+			ips[p.Addr()] = struct{}{}
+		} else {
+			cidrs.Insert(p)
+		}
 	}
+	return &BotBlocker{
+		blockedIPs:   ips,
+		blockedCIDRs: cidrs,
+	}
+}
+
+func TestShouldBlockIp(t *testing.T) {
+	botBlocker := createTestBlocker([]netip.Prefix{
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 10, 2}),
+			32,
+		),
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+			32,
+		),
+	})
 	badIp := netip.AddrFrom4([4]byte{10, 10, 10, 2})
 
 	blocked := botBlocker.shouldBlockIp(badIp)
@@ -95,18 +111,16 @@ func TestShouldBlockIp(t *testing.T) {
 }
 
 func TestShouldAllowIp(t *testing.T) {
-	botBlocker := BotBlocker{
-		prefixBlocklist: []netip.Prefix{
-			netip.PrefixFrom(
-				netip.AddrFrom4([4]byte{10, 10, 10, 2}),
-				32,
-			),
-			netip.PrefixFrom(
-				netip.AddrFrom4([4]byte{192, 168, 1, 1}),
-				32,
-			),
-		},
-	}
+	botBlocker := createTestBlocker([]netip.Prefix{
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 10, 2}),
+			32,
+		),
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{192, 168, 1, 1}),
+			32,
+		),
+	})
 	ip := netip.AddrFrom4([4]byte{10, 10, 10, 2})
 
 	blocked := botBlocker.shouldBlockIp(ip)
@@ -116,14 +130,12 @@ func TestShouldAllowIp(t *testing.T) {
 }
 
 func TestShouldBlockIpCidr(t *testing.T) {
-	botBlocker := BotBlocker{
-		prefixBlocklist: []netip.Prefix{
-			netip.PrefixFrom(
-				netip.AddrFrom4([4]byte{10, 10, 10, 0}),
-				24,
-			),
-		},
-	}
+	botBlocker := createTestBlocker([]netip.Prefix{
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 10, 0}),
+			24,
+		),
+	})
 	badIp := netip.AddrFrom4([4]byte{10, 10, 10, 2})
 
 	blocked := botBlocker.shouldBlockIp(badIp)
@@ -133,14 +145,12 @@ func TestShouldBlockIpCidr(t *testing.T) {
 }
 
 func TestShouldAllowIpCidr(t *testing.T) {
-	botBlocker := BotBlocker{
-		prefixBlocklist: []netip.Prefix{
-			netip.PrefixFrom(
-				netip.AddrFrom4([4]byte{10, 10, 10, 0}),
-				24,
-			),
-		},
-	}
+	botBlocker := createTestBlocker([]netip.Prefix{
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 10, 0}),
+			24,
+		),
+	})
 	goodIp := netip.AddrFrom4([4]byte{10, 10, 20, 2})
 
 	blocked := botBlocker.shouldBlockIp(goodIp)
