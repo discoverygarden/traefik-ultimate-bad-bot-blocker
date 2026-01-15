@@ -74,7 +74,7 @@ func (b *BotBlocker) updateIps() (int, int, error) {
 
 		prefixes, err := readPrefixes(resp.Body)
 		if err != nil {
-			return 0, 0, fmt.Errorf("failed to update CIDRs: %e", err)
+			return 0, 0, fmt.Errorf("failed to update CIDRs: %w", err)
 		}
 		prefixList = append(prefixList, prefixes...)
 	}
