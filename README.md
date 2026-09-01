@@ -16,6 +16,8 @@ spec:
     botblocker:
       ipblocklisturls:
         - http://badips.example.com/ip-blocklist"
+      ipwhitelisturls:
+        - https://apacheconfblacklist.s3.us-east-1.amazonaws.com/whitelist
       useragentblocklisturls:
         - http://badips.example.com/useragent-blocklist"
 ```
@@ -23,6 +25,12 @@ spec:
 ## Blocklist
 
 The blocklists should be acccessible via http/s and be a plain text list of IP address or useragents.
+
+## Whitelist
+
+`ipwhitelisturls` takes the same kind of plain text list of IPs/CIDRs, fetched over http/s on the same hourly refresh as the blocklists. A request from an IP matched by the whitelist is passed straight through: neither the IP blocklists nor the user agent blocklists are consulted for it.
+
+Blank lines and `#` comments are ignored in IP lists.
 
 ## Testing
 

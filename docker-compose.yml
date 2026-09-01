@@ -26,6 +26,8 @@ services:
       - "traefik.http.routers.whoami.middlewares=botblocker@docker"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[1]=http://lists/ip-blocklist"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipwhitelisturls[0]=https://apacheconfblacklist.s3.us-east-1.amazonaws.com/whitelist"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipwhitelisturls[1]=http://lists/ip-whitelist"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.loglevel=DEBUG"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[1]=http://lists/useragent-blocklist"
@@ -84,6 +86,26 @@ services:
     networks:
       test:
         ipv4_address: 10.10.10.3
+    depends_on:
+      - whoami
+      - traefik
+    stop_grace_period: 0s
+  allowed-whitelisted:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl -m 5s whoami.example.com 2>/dev/null | grep X-Real-Ip
+          sleep 5
+        done
+    networks:
+      test:
+        # In the blocked 10.10.20.0/24 CIDR, but on the whitelist.
+        ipv4_address: 10.10.20.5
     depends_on:
       - whoami
       - traefik

@@ -19,6 +19,7 @@ import (
 
 type Config struct {
 	IpBlocklistUrls        []string `json:"ipblocklisturls,omitempty"`
+	IpWhitelistUrls        []string `json:"ipwhitelisturls,omitempty"`
 	UserAgentBlocklistUrls []string `json:"useragentblocklisturls,omitempty"`
 	LogLevel               string   `json:"loglevel,omitempty"`
 }
@@ -26,6 +27,7 @@ type Config struct {
 func CreateConfig() *Config {
 	return &Config{
 		IpBlocklistUrls:        []string{},
+		IpWhitelistUrls:        []string{},
 		UserAgentBlocklistUrls: []string{},
 		LogLevel:               "INFO",
 	}
@@ -35,8 +37,10 @@ type BotBlocker struct {
 	next               http.Handler
 	name               string
 	prefixBlocklist    []netip.Prefix
+	prefixWhitelist    []netip.Prefix
 	userAgentBlockList []string
 	prefixMutex        sync.RWMutex
+	whitelistMutex     sync.RWMutex
 	uaMutex            sync.RWMutex
 	Config
 }
@@ -47,39 +51,68 @@ func (b *BotBlocker) update() error {
 	if err != nil {
 		return fmt.Errorf("failed to update CIDR blocklists: %w", err)
 	}
+	err = b.updateWhitelistIps()
+	if err != nil {
+		return fmt.Errorf("failed to update CIDR whitelists: %w", err)
+	}
 	err = b.updateUserAgents()
 	if err != nil {
 		return fmt.Errorf("failed to update user agent blocklists: %w", err)
 	}
 
 	duration := time.Since(startTime)
-	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Duration: ", duration)
+	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Whitelisted CIDRs: ", len(b.prefixWhitelist), " Duration: ", duration)
 	return nil
 }
 
-func (b *BotBlocker) updateIps() error {
-	prefixBlockList := make([]netip.Prefix, 0)
+// fetchPrefixes fetches and parses the CIDR lists at the given URLs.
+func fetchPrefixes(urls []string) ([]netip.Prefix, error) {
+	prefixList := make([]netip.Prefix, 0)
 
-	log.Info("Updating CIDR blocklist")
-	for _, url := range b.IpBlocklistUrls {
+	for _, url := range urls {
 		resp, err := http.Get(url)
 		if err != nil {
-			return fmt.Errorf("failed fetch CIDR list: %w", err)
+			return nil, fmt.Errorf("failed fetch CIDR list: %w", err)
 		}
 		if resp.StatusCode > 299 {
-			return fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
 		}
 
 		prefixes, err := readPrefixes(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to update CIDRs: %e", err)
+			return nil, fmt.Errorf("failed to read CIDRs from %v: %w", url, err)
 		}
-		prefixBlockList = append(prefixBlockList, prefixes...)
+		prefixList = append(prefixList, prefixes...)
+	}
+
+	return prefixList, nil
+}
+
+func (b *BotBlocker) updateIps() error {
+	log.Info("Updating CIDR blocklist")
+	prefixBlockList, err := fetchPrefixes(b.IpBlocklistUrls)
+	if err != nil {
+		return err
 	}
 
 	b.prefixMutex.Lock()
 	b.prefixBlocklist = prefixBlockList
 	b.prefixMutex.Unlock()
+
+	return nil
+}
+
+func (b *BotBlocker) updateWhitelistIps() error {
+	log.Info("Updating CIDR whitelist")
+	whitelist, err := fetchPrefixes(b.IpWhitelistUrls)
+	if err != nil {
+		return err
+	}
+
+	b.whitelistMutex.Lock()
+	b.prefixWhitelist = whitelist
+	b.whitelistMutex.Unlock()
 
 	return nil
 }
@@ -90,6 +123,9 @@ func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
 	scanner := bufio.NewScanner(prefixReader)
 	for scanner.Scan() {
 		entry := strings.TrimSpace(scanner.Text())
+		if entry == "" || strings.HasPrefix(entry, "#") {
+			continue
+		}
 		var prefix netip.Prefix
 		if strings.Contains(entry, "/") {
 			var err error
@@ -212,6 +248,13 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "internal error", http.StatusInternalServerError)
 		return
 	}
+	if b.isWhitelistedIp(remoteAddrPort.Addr()) {
+		log.Debugf("allowed request from whitelisted IP \"%v\"", remoteAddrPort.Addr())
+		timer()
+		b.next.ServeHTTP(rw, req)
+		return
+	}
+
 	if b.shouldBlockIp(remoteAddrPort.Addr()) {
 		log.Infof("blocked request with from IP \"%v\"", remoteAddrPort.Addr())
 		timer()
@@ -235,6 +278,20 @@ func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	timer()
 	b.next.ServeHTTP(rw, req)
+}
+
+// isWhitelistedIp reports whether the address is on the whitelist, which takes
+// precedence over every blocklist.
+func (b *BotBlocker) isWhitelistedIp(addr netip.Addr) bool {
+	b.whitelistMutex.RLock()
+	defer b.whitelistMutex.RUnlock()
+
+	for _, goodPrefix := range b.prefixWhitelist {
+		if goodPrefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {

@@ -1,6 +1,8 @@
 package traefik_ultimate_bad_bot_blocker
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"os"
 	"testing"
@@ -146,6 +148,116 @@ func TestShouldAllowIpCidr(t *testing.T) {
 	blocked := botBlocker.shouldBlockIp(goodIp)
 	if blocked {
 		t.Fatalf("botBlocker.shouldBlockIp(%v) = %t; want false", goodIp, blocked)
+	}
+}
+
+func TestReadWhitelistIps(t *testing.T) {
+	f, err := os.Open("fixtures/lists/ip-whitelist")
+	if err != nil {
+		t.Fatal("Failed to open testfile")
+	}
+
+	expected := []netip.Prefix{
+		netip.PrefixFrom(
+			netip.AddrFrom4([4]byte{10, 10, 20, 5}),
+			32,
+		),
+		netip.PrefixFrom(
+			netip.AddrFrom16([16]byte{0x20, 0x01, 0xd, 0xb8, 0x33, 0x33, 0x44, 0x44, 0x55, 0x55, 0x66, 0x66, 0x77, 0x77, 0x88, 0x88}),
+			128,
+		),
+	}
+	prefixes, err := readPrefixes(f)
+	if !equalPrefixes(prefixes, expected) || err != nil {
+		t.Fatalf("readPrefixes(f) = %v, %e; want %v, <nil>", prefixes, err, expected)
+	}
+}
+
+func TestIsWhitelistedIp(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixWhitelist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 20, 5}),
+				32,
+			),
+		},
+	}
+	goodIp := netip.AddrFrom4([4]byte{10, 10, 20, 5})
+
+	whitelisted := botBlocker.isWhitelistedIp(goodIp)
+	if !whitelisted {
+		t.Fatalf("botBlocker.isWhitelistedIp(%v) = %t; want true", goodIp, whitelisted)
+	}
+}
+
+func TestIsWhitelistedIpCidr(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixWhitelist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 20, 0}),
+				24,
+			),
+		},
+	}
+	goodIp := netip.AddrFrom4([4]byte{10, 10, 20, 5})
+
+	whitelisted := botBlocker.isWhitelistedIp(goodIp)
+	if !whitelisted {
+		t.Fatalf("botBlocker.isWhitelistedIp(%v) = %t; want true", goodIp, whitelisted)
+	}
+}
+
+func TestIsNotWhitelistedIp(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixWhitelist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 20, 5}),
+				32,
+			),
+		},
+	}
+	otherIp := netip.AddrFrom4([4]byte{10, 10, 10, 2})
+
+	whitelisted := botBlocker.isWhitelistedIp(otherIp)
+	if whitelisted {
+		t.Fatalf("botBlocker.isWhitelistedIp(%v) = %t; want false", otherIp, whitelisted)
+	}
+}
+
+// A whitelisted IP inside a blocked CIDR must be allowed through.
+func TestWhitelistOverridesBlocklist(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixBlocklist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 20, 0}),
+				24,
+			),
+		},
+		prefixWhitelist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 20, 5}),
+				32,
+			),
+		},
+	}
+	ip := netip.AddrFrom4([4]byte{10, 10, 20, 5})
+
+	next := http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+	})
+	botBlocker.next = next
+
+	if !botBlocker.shouldBlockIp(ip) {
+		t.Fatalf("botBlocker.shouldBlockIp(%v) = false; want true", ip)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://whoami.example.com", nil)
+	req.RemoteAddr = "10.10.20.5:12345"
+	recorder := httptest.NewRecorder()
+	botBlocker.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("botBlocker.ServeHTTP() responded %d for whitelisted IP %v; want %d", recorder.Code, ip, http.StatusOK)
 	}
 }
 
