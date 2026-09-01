@@ -115,6 +115,10 @@ func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
 	scanner := bufio.NewScanner(prefixReader)
 	for scanner.Scan() {
 		entry := strings.TrimSpace(scanner.Text())
+		if entry == "" {
+			// skip over empty lines
+			continue
+		}
 		var prefix netip.Prefix
 		if strings.Contains(entry, "/") {
 			var err error
