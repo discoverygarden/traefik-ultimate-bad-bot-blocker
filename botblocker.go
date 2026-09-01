@@ -19,6 +19,7 @@ import (
 
 type Config struct {
 	IpBlocklistUrls        []string `json:"ipblocklisturls,omitempty"`
+	IpAllowlistUrls        []string `json:"ipallowlisturls,omitempty"`
 	UserAgentBlocklistUrls []string `json:"useragentblocklisturls,omitempty"`
 	LogLevel               string   `json:"loglevel,omitempty"`
 }
@@ -26,6 +27,7 @@ type Config struct {
 func CreateConfig() *Config {
 	return &Config{
 		IpBlocklistUrls:        []string{},
+		IpAllowlistUrls:        []string{},
 		UserAgentBlocklistUrls: []string{},
 		LogLevel:               "INFO",
 	}
@@ -36,6 +38,7 @@ type BotBlocker struct {
 	name               string
 	prefixBlocklist    []netip.Prefix
 	userAgentBlockList []string
+	prefixAllowlist    []netip.Prefix
 	prefixMutex        sync.RWMutex
 	uaMutex            sync.RWMutex
 	Config
@@ -43,45 +46,67 @@ type BotBlocker struct {
 
 func (b *BotBlocker) update() error {
 	startTime := time.Now()
+
 	err := b.updateIps()
 	if err != nil {
-		return fmt.Errorf("failed to update CIDR blocklists: %w", err)
+		return fmt.Errorf("failed to update CIDR lists: %w", err)
 	}
+
 	err = b.updateUserAgents()
 	if err != nil {
 		return fmt.Errorf("failed to update user agent blocklists: %w", err)
 	}
 
 	duration := time.Since(startTime)
-	log.Info("Updated block lists. Blocked CIDRs: ", len(b.prefixBlocklist), " Duration: ", duration)
+	log.Info(
+		"Updated lists.",
+		"Blocked CIDRs:", len(b.prefixBlocklist),
+		"Allowed CIDRs:", len(b.prefixAllowlist),
+		"Blocked Agents:", len(b.userAgentBlockList),
+		"Duration:", duration,
+	)
 	return nil
 }
 
 func (b *BotBlocker) updateIps() error {
-	prefixBlockList := make([]netip.Prefix, 0)
-
 	log.Info("Updating CIDR blocklist")
-	for _, url := range b.IpBlocklistUrls {
-		resp, err := http.Get(url)
-		if err != nil {
-			return fmt.Errorf("failed fetch CIDR list: %w", err)
-		}
-		if resp.StatusCode > 299 {
-			return fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
-		}
+	prefixBlockList, err := fetchPrefixes(b.IpBlocklistUrls)
+	if err != nil {
+		return fmt.Errorf("failed to update CIDR blocklists: %w", err)
+	}
 
-		prefixes, err := readPrefixes(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to update CIDRs: %e", err)
-		}
-		prefixBlockList = append(prefixBlockList, prefixes...)
+	log.Info("Updating CIDR allowlist")
+	prefixAllowList, err := fetchPrefixes(b.IpAllowlistUrls)
+	if err != nil {
+		return fmt.Errorf("failed to update CIDR allowlists: %w", err)
 	}
 
 	b.prefixMutex.Lock()
 	b.prefixBlocklist = prefixBlockList
+	b.prefixAllowlist = prefixAllowList
 	b.prefixMutex.Unlock()
-
 	return nil
+}
+func fetchPrefixes(urls []string) ([]netip.Prefix, error) {
+	prefixList := make([]netip.Prefix, 0)
+
+	for _, url := range urls {
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("failed fetch CIDR list: %w", err)
+		}
+		if resp.StatusCode > 299 {
+			return nil, fmt.Errorf("failed to fetch CIDR list: received a %v from %v", resp.Status, url)
+		}
+
+		prefixes, err := readPrefixes(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update CIDRs: %e", err)
+		}
+		prefixList = append(prefixList, prefixes...)
+	}
+
+	return prefixList, nil
 }
 
 func readPrefixes(prefixReader io.ReadCloser) ([]netip.Prefix, error) {
@@ -199,7 +224,6 @@ func (b *BotBlocker) UpdateLoop(ctx context.Context) {
 	}
 }
 
-
 func (b *BotBlocker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	startTime := time.Now()
 	log.Debugf("Checking request: CIDR: \"%v\" user agent: \"%s\"", req.RemoteAddr, req.UserAgent())
@@ -241,6 +265,11 @@ func (b *BotBlocker) shouldBlockIp(addr netip.Addr) bool {
 	b.prefixMutex.RLock()
 	defer b.prefixMutex.RUnlock()
 
+	for _, goodPrefix := range b.prefixAllowlist {
+		if goodPrefix.Contains(addr) {
+			return false
+		}
+	}
 	for _, badPrefix := range b.prefixBlocklist {
 		if badPrefix.Contains(addr) {
 			return true
