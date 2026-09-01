@@ -7,4 +7,5 @@ summary: 'IP and user agent blocker'
 
 testData:
   ipblocklisturls: []
+  ipallowlisturls: []
   useragentblocklisturls: []
