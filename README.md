@@ -15,11 +15,11 @@ spec:
   plugin:
     botblocker:
       ipblocklisturls:
-        - http://badips.example.com/ip-blocklist"
-      ipallowlocklisturls:
-        - http://badips.example.com/ip-allowlist"
+        - http://badips.example.com/ip-blocklist
+      ipallowlisturls:
+        - http://badips.example.com/ip-allowlist
       useragentblocklisturls:
-        - http://badips.example.com/useragent-blocklist"
+        - http://badips.example.com/useragent-blocklist
 ```
 
 ## Allow/Block lists
