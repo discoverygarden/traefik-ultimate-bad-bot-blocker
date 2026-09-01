@@ -15,14 +15,16 @@ spec:
   plugin:
     botblocker:
       ipblocklisturls:
-        - http://badips.example.com/ip-blocklist"
+        - http://badips.example.com/ip-blocklist
+      ipallowlisturls:
+        - http://badips.example.com/ip-allowlist
       useragentblocklisturls:
-        - http://badips.example.com/useragent-blocklist"
+        - http://badips.example.com/useragent-blocklist
 ```
 
-## Blocklist
+## Allow/Block lists
 
-The blocklists should be acccessible via http/s and be a plain text list of IP address or useragents.
+The allowlists and blocklists should be acccessible via http/s and be a plain text list of IP address or useragents.
 
 ## Testing
 

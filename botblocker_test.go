@@ -149,6 +149,29 @@ func TestShouldAllowIpCidr(t *testing.T) {
 	}
 }
 
+func TestShouldAllowIpAllowlist(t *testing.T) {
+	botBlocker := BotBlocker{
+		prefixBlocklist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 10, 0}),
+				24,
+			),
+		},
+		prefixAllowlist: []netip.Prefix{
+			netip.PrefixFrom(
+				netip.AddrFrom4([4]byte{10, 10, 10, 0}),
+				25,
+			),
+		},
+	}
+	goodIp := netip.AddrFrom4([4]byte{10, 10, 10, 2})
+
+	blocked := botBlocker.shouldBlockIp(goodIp)
+	if blocked {
+		t.Fatalf("botBlocker.shouldBlockIp(%v) = %t; want false", goodIp, blocked)
+	}
+}
+
 func TestShouldBlockUserAgent(t *testing.T) {
 	badAgent := "nintendobrowser"
 	botBlocker := BotBlocker{

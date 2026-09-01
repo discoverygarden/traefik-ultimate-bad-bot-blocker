@@ -1,7 +1,7 @@
 name: traefik-bad-bot-blocker
 services:
   traefik:
-    image: traefik:v3.4
+    image: traefik:v3.7
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -26,6 +26,7 @@ services:
       - "traefik.http.routers.whoami.middlewares=botblocker@docker"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-ip-addresses.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.ipblocklisturls[1]=http://lists/ip-blocklist"
+      - "traefik.http.middlewares.botblocker.plugin.botblocker.ipallowlisturls[0]=http://lists/ip-allowlist"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.loglevel=DEBUG"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[0]=https://raw.githubusercontent.com/mitchellkrogza/apache-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
       - "traefik.http.middlewares.botblocker.plugin.botblocker.useragentblocklisturls[1]=http://lists/useragent-blocklist"
@@ -103,6 +104,25 @@ services:
     networks:
       test:
         ipv4_address: 10.10.20.2
+    depends_on:
+      - whoami
+      - traefik
+    stop_grace_period: 0s
+  allowed-ip:
+    image: quay.io/curl/curl
+    external_links:
+      - traefik:whoami.example.com
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          curl -m 5s whoami.example.com 2>/dev/null | grep X-Real-Ip
+          sleep 5
+        done
+    networks:
+      test:
+        ipv4_address: 10.10.20.3
     depends_on:
       - whoami
       - traefik
