@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 )
 
 type LogLevel int
@@ -38,10 +39,9 @@ type Logger struct {
 	WarningLogger log.Logger
 	InfoLogger    log.Logger
 	DebugLogger   log.Logger
-	Level         LogLevel
 }
 
-func New(out io.Writer, prefix string, flag int, level LogLevel) *Logger {
+func New(out io.Writer, prefix string, flag int) *Logger {
 	if len(prefix) != 0 {
 		prefix = prefix + " "
 	}
@@ -50,60 +50,67 @@ func New(out io.Writer, prefix string, flag int, level LogLevel) *Logger {
 		WarningLogger: *log.New(out, prefix+"WARNING: ", flag),
 		InfoLogger:    *log.New(out, prefix+"INFO: ", flag),
 		DebugLogger:   *log.New(out, prefix+"DEBUG: ", flag),
-		Level:         level,
 	}
 }
 
-var std = New(os.Stdout, "Bad Bot Blocker", log.LstdFlags|log.Lmsgprefix, INFO)
+var std = New(os.Stdout, "Bad Bot Blocker", log.LstdFlags|log.Lmsgprefix)
 
-func Default() *Logger {
-	return std
+// The level is shared by every middleware instance and read by the background
+// refresh goroutine, so it is stored atomically.
+var level = int32(INFO)
+
+func SetLevel(newLevel LogLevel) {
+	atomic.StoreInt32(&level, int32(newLevel))
+}
+
+func enabled(wanted LogLevel) bool {
+	return LogLevel(atomic.LoadInt32(&level)) >= wanted
 }
 
 func Error(v ...any) {
-	if std.Level >= ERROR {
+	if enabled(ERROR) {
 		std.ErrorLogger.Println(v...)
 	}
 }
 
 func Warning(v ...any) {
-	if std.Level >= WARNING {
+	if enabled(WARNING) {
 		std.WarningLogger.Println(v...)
 	}
 }
 
 func Info(v ...any) {
-	if std.Level >= INFO {
+	if enabled(INFO) {
 		std.InfoLogger.Println(v...)
 	}
 }
 
 func Debug(v ...any) {
-	if std.Level >= DEBUG {
+	if enabled(DEBUG) {
 		std.DebugLogger.Println(v...)
 	}
 }
 
 func Errorf(format string, v ...any) {
-	if std.Level >= ERROR {
+	if enabled(ERROR) {
 		std.ErrorLogger.Printf(format, v...)
 	}
 }
 
 func Warningf(format string, v ...any) {
-	if std.Level >= WARNING {
+	if enabled(WARNING) {
 		std.WarningLogger.Printf(format, v...)
 	}
 }
 
 func Infof(format string, v ...any) {
-	if std.Level >= INFO {
+	if enabled(INFO) {
 		std.InfoLogger.Printf(format, v...)
 	}
 }
 
 func Debugf(format string, v ...any) {
-	if std.Level >= DEBUG {
+	if enabled(DEBUG) {
 		std.DebugLogger.Printf(format, v...)
 	}
 }
